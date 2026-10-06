@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Controlo Financeiro"
+description = "Aplicativo responsivo de controlo financeiro diário para gerir movimentos de Caixa e Banco em Kz, com transferências, relatórios, filtros e resumo financeiro."
+version = "1.0.0"
+id = "artifacts/controlo-financeiro"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 23551
+
+[services.development]
+run = "pnpm --filter @workspace/controlo-financeiro run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/controlo-financeiro", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/controlo-financeiro/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "23551"
+BASE_PATH = "/"

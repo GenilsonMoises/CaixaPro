@@ -1,0 +1,737 @@
+Crie um aplicativo web responsivo de CONTROLO FINANCEIRO para gestão diária de CAIXA e BANCO, em português de Angola, usando Kz (AOA) como moeda.
+
+O aplicativo deve ser profissional, moderno, simples de utilizar e funcionar muito bem em computador e telemóvel.
+
+OBJETIVO PRINCIPAL
+
+O sistema deve permitir:
+
+1. Registar todos os movimentos financeiros diários.
+2. Separar claramente CAIXA e BANCO.
+3. Registar entradas e saídas.
+4. Registar transferências entre Banco e Caixa sem duplicar os valores no saldo geral.
+5. Consultar todos os movimentos.
+6. Filtrar movimentos por período, descrição, movimento, categoria, responsável e origem.
+7. Calcular automaticamente entradas, saídas e saldo.
+8. Apresentar um RESUMO GERAL com a situação financeira do Banco, Caixa e Total Disponível.
+9. Apresentar gráficos financeiros.
+10. Permitir editar e eliminar lançamentos.
+11. Guardar os dados de forma persistente.
+12. Ter uma interface visual semelhante aos modelos de Fluxo de Caixa apresentados nas imagens de referência.
+
+==================================================
+1. MENU PRINCIPAL
+==================================================
+
+Criar um menu lateral ou superior com:
+
+- Dashboard / Resumo Geral
+- Fluxo Diário
+- Caixa
+- Banco
+- Transferências
+- Categorias
+- Responsáveis
+- Relatórios
+- Configurações
+
+==================================================
+2. FLUXO DIÁRIO
+==================================================
+
+Criar uma tela chamada "Fluxo Diário".
+
+No topo apresentar cartões:
+
+ENTRADAS
+Valor total das entradas no período selecionado.
+
+SAÍDAS
+Valor total das saídas no período selecionado.
+
+SALDO
+Entradas - Saídas.
+
+N.º DE MOVIMENTOS
+Quantidade de lançamentos no período.
+
+Abaixo dos cartões criar filtros:
+
+DATA
+- Data inicial
+- Data final
+
+DESCRIÇÃO
+- Todas
+- Pesquisa por descrição
+
+MOVIMENTO
+- Todos
+- Entrada
+- Saída
+- Transferência
+
+CATEGORIA
+- Todas as categorias
+
+RESPONSÁVEL
+- Todos
+
+ORIGEM
+- Todos
+- Caixa
+- Banco
+
+Botão:
+"Limpar filtros"
+
+Mostrar também a indicação:
+"Filtros ativos: X"
+
+==================================================
+3. TABELA DE MOVIMENTOS
+==================================================
+
+Criar uma tabela profissional chamada "Movimentos".
+
+Colunas:
+
+DATA
+MOVIMENTO
+VALOR
+ORIGEM
+CATEGORIA
+DESCRIÇÃO
+RESPONSÁVEL
+OBSERVAÇÃO
+AÇÕES
+
+Exemplo:
+
+01/10/2026 | ENTRADA | 60.000,00 Kz | Banco | Recebimento | Retirado do banco | Genilson | -
+01/10/2026 | ENTRADA | 60.000,00 Kz | Caixa | Recebimento | Entrada no caixa | Genilson | -
+02/10/2026 | SAÍDA | 7.000,00 Kz | Caixa | Transporte | Táxi para reunião | Genilson | -
+02/10/2026 | SAÍDA | 4.000,00 Kz | Caixa | Material | Compra de material | Genilson | -
+
+A coluna MOVIMENTO deve possuir identificação visual:
+
+ENTRADA = verde
+SAÍDA = vermelho
+TRANSFERÊNCIA = azul
+
+Usar badges arredondados.
+
+Adicionar ações:
+
+Editar
+Eliminar
+Visualizar detalhes
+
+Antes de eliminar, pedir confirmação.
+
+==================================================
+4. NOVO LANÇAMENTO
+==================================================
+
+Criar botão destacado:
+
+"+ Novo lançamento"
+
+Ao clicar abrir formulário.
+
+Campos:
+
+Data *
+Tipo de movimento *
+- Entrada
+- Saída
+- Transferência
+
+Conta/Origem *
+- Caixa
+- Banco
+
+Valor *
+Categoria *
+Descrição *
+Responsável
+Observação
+
+Botões:
+
+Cancelar
+Guardar lançamento
+
+Validar os campos obrigatórios.
+
+O valor deve ser sempre positivo e o sistema deve determinar se é entrada ou saída através do tipo de movimento.
+
+==================================================
+5. CAIXA
+==================================================
+
+Criar uma página específica chamada "Caixa".
+
+Apresentar:
+
+Total de Entradas do Caixa
+Total de Saídas do Caixa
+Saldo Atual do Caixa
+
+Mostrar abaixo uma tabela somente com os movimentos do Caixa.
+
+Criar gráfico:
+
+Entradas vs Saídas do Caixa por dia.
+
+==================================================
+6. BANCO
+==================================================
+
+Criar uma página específica chamada "Banco".
+
+Apresentar:
+
+Total de Entradas do Banco
+Total de Saídas do Banco
+Saldo Atual do Banco
+
+Mostrar abaixo uma tabela somente com os movimentos do Banco.
+
+Criar gráfico:
+
+Entradas vs Saídas do Banco por dia.
+
+==================================================
+7. TRANSFERÊNCIAS
+==================================================
+
+Criar uma área específica para transferências.
+
+Permitir:
+
+Banco → Caixa
+Caixa → Banco
+
+Campos:
+
+Data
+Conta de origem
+Conta de destino
+Valor
+Descrição
+Responsável
+Observação
+
+REGRA MUITO IMPORTANTE:
+
+Uma transferência não deve ser considerada como uma nova entrada ou nova saída no TOTAL DISPONÍVEL.
+
+Exemplo:
+
+Banco → Caixa
+100.000 Kz
+
+O Banco diminui 100.000 Kz.
+O Caixa aumenta 100.000 Kz.
+
+Mas:
+
+Total Disponível antes = 500.000 Kz
+Total Disponível depois = 500.000 Kz
+
+Ou seja, a transferência apenas muda o dinheiro de lugar.
+
+==================================================
+8. RESUMO GERAL
+==================================================
+
+Criar uma página "RESUMO GERAL".
+
+Usar como referência visual o segundo modelo enviado.
+
+Cabeçalho:
+
+RESUMO GERAL
+FLUXO FINANCEIRO
+
+Mostrar a data de atualização automaticamente.
+
+Criar dois grandes blocos:
+
+BANCO
+"Movimentações e saldo da conta bancária"
+
+Dentro:
+
+Total de Entradas do Banco
+Total de Saídas do Banco
+Saldo Atual do Banco
+
+CAIXA
+"Movimentações e saldo do caixa"
+
+Dentro:
+
+Total de Entradas do Caixa
+Total de Saídas do Caixa
+Saldo Atual do Caixa
+
+==================================================
+9. TOTAL DISPONÍVEL
+==================================================
+
+Criar um cartão grande e destacado:
+
+TOTAL DISPONÍVEL
+
+Subtítulo:
+
+Soma do saldo do Banco e do Caixa
+
+Valor:
+
+SALDO DO BANCO + SALDO DO CAIXA
+
+Exemplo:
+
+Banco: 36.803,00 Kz
+Caixa: 73.950,00 Kz
+
+Total disponível:
+110.753,00 Kz
+
+Este valor deve ser calculado automaticamente.
+
+IMPORTANTE:
+
+Transferências entre Banco e Caixa não podem aumentar ou diminuir o Total Disponível.
+
+==================================================
+10. GRÁFICOS
+==================================================
+
+No Resumo Geral criar gráficos:
+
+1. Entradas vs Saídas
+
+Gráfico de barras mostrando os valores por dia.
+
+Exemplo:
+
+01/10
+Entradas: 60.000
+Saídas: 60.000
+
+02/10
+Entradas: 60.000
+Saídas: 19.850
+
+03/10
+etc.
+
+2. SAÍDAS POR CATEGORIA
+
+Criar gráfico circular/donut.
+
+Categorias:
+
+Transporte
+Alimentação
+Material
+Serviços
+Contas
+Outros
+
+Mostrar:
+
+Valor
+Percentagem
+
+Exemplo:
+
+Transporte — 50.000 Kz — 28%
+Alimentação — 36.500 Kz — 20%
+Material — 25.000 Kz — 14%
+Serviços — 20.000 Kz — 11%
+Contas — 18.000 Kz — 10%
+Outros — 31.850 Kz — 17%
+
+Os valores devem ser calculados automaticamente a partir dos lançamentos.
+
+==================================================
+11. FILTROS DO RESUMO
+==================================================
+
+O Resumo Geral deve possuir filtros globais.
+
+Filtros:
+
+Data inicial
+Data final
+Descrição
+Movimento
+Categoria
+Responsável
+Conta
+
+Quando o utilizador alterar um filtro:
+
+- cartões devem atualizar
+- gráficos devem atualizar
+- tabela deve atualizar
+- saldo deve atualizar
+
+Criar botão:
+
+"LIMPAR FILTROS"
+
+==================================================
+12. CATEGORIAS
+==================================================
+
+Criar área para administrar categorias.
+
+Categorias iniciais:
+
+Transporte
+Alimentação
+Material
+Serviços
+Contas
+Salários
+Compras
+Impostos
+Comunicação
+Manutenção
+Outros
+
+Permitir:
+
+Adicionar
+Editar
+Eliminar
+
+==================================================
+13. RESPONSÁVEIS
+==================================================
+
+Criar cadastro de responsáveis.
+
+Campos:
+
+Nome
+Cargo/Função
+Estado
+
+Permitir adicionar, editar e eliminar responsáveis.
+
+==================================================
+14. SALDO INICIAL
+==================================================
+
+Criar uma área de configuração do saldo inicial.
+
+Permitir definir:
+
+Saldo inicial do Banco
+Saldo inicial do Caixa
+
+Exemplo:
+
+Saldo inicial Banco: 500.000 Kz
+Saldo inicial Caixa: 100.000 Kz
+
+Os saldos atuais devem ser calculados automaticamente:
+
+Saldo Banco =
+Saldo inicial Banco + Entradas Banco - Saídas Banco
+
+Saldo Caixa =
+Saldo inicial Caixa + Entradas Caixa - Saídas Caixa
+
+Saldo Total =
+Saldo Banco + Saldo Caixa
+
+==================================================
+15. REGRAS FINANCEIRAS
+==================================================
+
+Implementar corretamente:
+
+ENTRADA:
+Aumenta o saldo da conta selecionada.
+
+SAÍDA:
+Diminui o saldo da conta selecionada.
+
+BANCO → CAIXA:
+Diminui Banco e aumenta Caixa.
+
+CAIXA → BANCO:
+Diminui Caixa e aumenta Banco.
+
+Transferências não devem ser contabilizadas duas vezes no Total Disponível.
+
+O sistema nunca deve permitir saldo incorreto.
+
+==================================================
+16. DESIGN
+==================================================
+
+Usar um design semelhante às imagens fornecidas.
+
+Paleta:
+
+Azul escuro:
+#123B63
+
+Azul:
+#1769AA
+
+Verde:
+#36A85A
+
+Vermelho:
+#EF4444
+
+Laranja para Caixa:
+#F59E0B
+
+Fundo:
+#F5F8FC
+
+Cartões brancos com sombras suaves.
+
+Usar cantos arredondados.
+
+Interface limpa e profissional.
+
+Tipografia moderna.
+
+Valores financeiros devem aparecer em:
+
+196.000,00 Kz
+
+e não:
+
+196000 Kz
+
+==================================================
+17. RESPONSIVIDADE
+==================================================
+
+O aplicativo deve funcionar perfeitamente em:
+
+Computador
+Tablet
+iPhone
+Android
+
+No telemóvel:
+
+- menu deve transformar-se em menu compacto
+- cartões devem ficar empilhados
+- tabela deve permitir scroll horizontal
+- formulários devem ocupar toda a largura
+- gráficos devem adaptar-se ao tamanho da tela
+
+==================================================
+18. PESQUISA
+==================================================
+
+Adicionar pesquisa global nos movimentos.
+
+Permitir pesquisar por:
+
+Descrição
+Categoria
+Responsável
+Valor
+Data
+
+==================================================
+19. RELATÓRIOS
+==================================================
+
+Criar página de relatórios.
+
+Permitir selecionar:
+
+Período
+Caixa
+Banco
+Ambos
+
+Mostrar:
+
+Total de entradas
+Total de saídas
+Saldo
+Total disponível
+Despesas por categoria
+
+Adicionar opção para exportar:
+
+Excel
+PDF
+CSV
+
+==================================================
+20. SEGURANÇA E DADOS
+==================================================
+
+Os dados devem ser persistentes.
+
+Não utilizar dados fictícios como dados reais depois que o aplicativo estiver em produção.
+
+Criar banco de dados para:
+
+Movimentos
+Categorias
+Responsáveis
+Contas
+Transferências
+Configurações
+
+Validar todos os valores antes de guardar.
+
+==================================================
+21. DASHBOARD FINAL
+==================================================
+
+O Dashboard/Resumo Geral deve apresentar, de forma clara:
+
+RESUMO GERAL
+FLUXO FINANCEIRO
+
+BANCO
+Entradas
+Saídas
+Saldo
+
+CAIXA
+Entradas
+Saídas
+Saldo
+
+TOTAL DISPONÍVEL
+Banco + Caixa
+
+ENTRADAS VS SAÍDAS
+Gráfico por dia
+
+SAÍDAS POR CATEGORIA
+Gráfico circular
+
+MOVIMENTOS RECENTES
+Tabela com os últimos lançamentos.
+
+==================================================
+22. EXPERIÊNCIA DO UTILIZADOR
+==================================================
+
+O sistema deve ser muito simples.
+
+O utilizador deve conseguir:
+
+1. Abrir "Novo lançamento".
+2. Escolher Entrada, Saída ou Transferência.
+3. Escolher Banco ou Caixa.
+4. Introduzir valor.
+5. Escolher categoria.
+6. Escrever descrição.
+7. Guardar.
+
+Depois disso, todos os valores do sistema devem atualizar automaticamente.
+
+Não quero que o utilizador tenha que fazer cálculos manualmente.
+
+==================================================
+23. DADOS DE EXEMPLO
+==================================================
+
+Criar alguns dados de demonstração para testar o sistema:
+
+01/10/2026
+Entrada Banco
+60.000 Kz
+Recebimento do banco/Fundo de maneio
+
+01/10/2026
+Entrada Banco
+60.000 Kz
+Recebimento do banco/Fundo de maneio
+
+02/10/2026
+Saída Caixa
+7.000 Kz
+Táxi e alimentação durante 2 dias
+
+02/10/2026
+Entrada Banco
+60.000 Kz
+Recebimento do banco/Fundo de maneio
+
+02/10/2026
+Saída Caixa
+7.000 Kz
+Táxi para reunião
+
+02/10/2026
+Saída Caixa
+4.000 Kz
+Compra de material
+
+02/10/2026
+Saída Caixa
+2.000 Kz
+Apoio ao táxi
+
+02/10/2026
+Saída Caixa
+1.150 Kz
+Transferência bancária
+
+02/10/2026
+Saída Caixa
+5.000 Kz
+Licença
+
+02/10/2026
+Saída Caixa
+1.500 Kz
+Documentação
+
+02/10/2026
+Saída Caixa
+6.250 Kz
+Transporte
+
+Esses dados servem apenas para demonstração.
+
+==================================================
+RESULTADO ESPERADO
+==================================================
+
+Entregar uma aplicação financeira completa, profissional e funcional.
+
+A aplicação deve parecer uma versão moderna e automatizada do meu modelo de Excel.
+
+Priorizar:
+
+- simplicidade
+- precisão dos cálculos
+- boa aparência
+- facilidade de lançamento
+- filtros
+- dashboard
+- controlo separado de Caixa e Banco
+- resumo geral
+- gráficos
+- relatórios
+- responsividade
+
+Não criar apenas uma interface visual.
+
+Criar todas as funcionalidades e a lógica financeira necessárias para que o aplicativo realmente funcione.

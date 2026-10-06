@@ -1,22 +1,21 @@
 openapi: 3.1.0
 info:
-  # Do not change the title, if the title changes, the import paths will be broken
+  # Do not change the title; it controls generated import paths.
   title: Api
   version: 0.1.0
-  description: API specification
+  description: Persistent cash and bank ledger API
 servers:
   - url: /api
     description: Base API path
 tags:
   - name: health
-    description: Health operations
+  - name: finance
 paths:
   /healthz:
     get:
       operationId: healthCheck
       tags: [health]
-      summary: Health check
-      description: Returns server health status
+      summary: Check API health
       responses:
         "200":
           description: Healthy
@@ -24,13 +23,608 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /categories:
+    get:
+      operationId: listCategories
+      tags: [finance]
+      summary: List categories
+      responses:
+        "200":
+          description: Categories
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Category"
+    post:
+      operationId: createCategory
+      tags: [finance]
+      summary: Create a category
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryInput"
+      responses:
+        "201":
+          description: Created category
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /categories/{id}:
+    patch:
+      operationId: updateCategory
+      tags: [finance]
+      summary: Rename a category
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CategoryUpdate"
+      responses:
+        "200":
+          description: Updated category
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Category"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteCategory
+      tags: [finance]
+      summary: Delete a category
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /responsibles:
+    get:
+      operationId: listResponsibles
+      tags: [finance]
+      summary: List responsible people
+      responses:
+        "200":
+          description: Responsible people
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Responsible"
+    post:
+      operationId: createResponsible
+      tags: [finance]
+      summary: Add a responsible person
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResponsibleInput"
+      responses:
+        "201":
+          description: Created responsible person
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Responsible"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /responsibles/{id}:
+    patch:
+      operationId: updateResponsible
+      tags: [finance]
+      summary: Update a responsible person
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ResponsibleUpdate"
+      responses:
+        "200":
+          description: Updated responsible person
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Responsible"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteResponsible
+      tags: [finance]
+      summary: Delete a responsible person
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /movements:
+    get:
+      operationId: listMovements
+      tags: [finance]
+      summary: List, search, and filter ledger movements
+      parameters:
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: type
+          in: query
+          schema:
+            $ref: "#/components/schemas/MovementType"
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: responsible
+          in: query
+          schema:
+            type: string
+        - name: account
+          in: query
+          schema:
+            $ref: "#/components/schemas/Account"
+      responses:
+        "200":
+          description: Filtered movements
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Movement"
+    post:
+      operationId: createMovement
+      tags: [finance]
+      summary: Create an income, expense, or transfer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MovementInput"
+      responses:
+        "201":
+          description: Created movement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Movement"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+  /movements/{id}:
+    patch:
+      operationId: updateMovement
+      tags: [finance]
+      summary: Edit a movement
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/MovementUpdate"
+      responses:
+        "200":
+          description: Updated movement
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Movement"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    delete:
+      operationId: deleteMovement
+      tags: [finance]
+      summary: Delete a movement
+      parameters:
+        - $ref: "#/components/parameters/Id"
+      responses:
+        "204":
+          description: Deleted
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /overview:
+    get:
+      operationId: getOverview
+      tags: [finance]
+      summary: Get filtered financial totals and chart data
+      parameters:
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: type
+          in: query
+          schema:
+            $ref: "#/components/schemas/MovementType"
+        - name: category
+          in: query
+          schema:
+            type: string
+        - name: responsible
+          in: query
+          schema:
+            type: string
+        - name: account
+          in: query
+          schema:
+            $ref: "#/components/schemas/Account"
+      responses:
+        "200":
+          description: Summary and chart data
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Overview"
+  /settings:
+    get:
+      operationId: getSettings
+      tags: [finance]
+      summary: Get opening balances
+      responses:
+        "200":
+          description: Current settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppSettings"
+    put:
+      operationId: updateSettings
+      tags: [finance]
+      summary: Set opening balances for Bank and Cash
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SettingsInput"
+      responses:
+        "200":
+          description: Updated settings
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AppSettings"
+        "400":
+          $ref: "#/components/responses/BadRequest"
 components:
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+  responses:
+    BadRequest:
+      description: Invalid request
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
     HealthStatus:
       type: object
       properties:
         status:
           type: string
+      required: [status]
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required: [error]
+    Account:
+      type: string
+      enum: [bank, cash]
+    MovementType:
+      type: string
+      enum: [income, expense, transfer]
+    Category:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, name, createdAt]
+    CategoryInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+      required: [name]
+    CategoryUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+      required: [name]
+    Responsible:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        role:
+          type: ["string", "null"]
+        active:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+      required: [id, name, role, active, createdAt]
+    ResponsibleInput:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        role:
+          type: ["string", "null"]
+        active:
+          type: boolean
+      required: [name]
+    ResponsibleUpdate:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        role:
+          type: ["string", "null"]
+        active:
+          type: boolean
+    Movement:
+      type: object
+      properties:
+        id:
+          type: integer
+        date:
+          type: string
+          format: date
+        type:
+          $ref: "#/components/schemas/MovementType"
+        account:
+          $ref: "#/components/schemas/Account"
+        destinationAccount:
+          oneOf:
+            - $ref: "#/components/schemas/Account"
+            - type: "null"
+        amountCents:
+          type: integer
+          minimum: 1
+        category:
+          type: ["string", "null"]
+        description:
+          type: string
+        responsible:
+          type: ["string", "null"]
+        note:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+          format: date-time
       required:
-        - status
-
+        - id
+        - date
+        - type
+        - account
+        - destinationAccount
+        - amountCents
+        - category
+        - description
+        - responsible
+        - note
+        - createdAt
+    MovementInput:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        type:
+          $ref: "#/components/schemas/MovementType"
+        account:
+          $ref: "#/components/schemas/Account"
+        destinationAccount:
+          oneOf:
+            - $ref: "#/components/schemas/Account"
+            - type: "null"
+        amountCents:
+          type: integer
+          minimum: 1
+        category:
+          type: ["string", "null"]
+        description:
+          type: string
+          minLength: 1
+          maxLength: 500
+        responsible:
+          type: ["string", "null"]
+        note:
+          type: ["string", "null"]
+      required: [date, type, account, amountCents, description]
+    MovementUpdate:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        type:
+          $ref: "#/components/schemas/MovementType"
+        account:
+          $ref: "#/components/schemas/Account"
+        destinationAccount:
+          oneOf:
+            - $ref: "#/components/schemas/Account"
+            - type: "null"
+        amountCents:
+          type: integer
+          minimum: 1
+        category:
+          type: ["string", "null"]
+        description:
+          type: string
+          minLength: 1
+          maxLength: 500
+        responsible:
+          type: ["string", "null"]
+        note:
+          type: ["string", "null"]
+      minProperties: 1
+    DailyFlow:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        incomeCents:
+          type: integer
+        expenseCents:
+          type: integer
+      required: [date, incomeCents, expenseCents]
+    CategoryExpense:
+      type: object
+      properties:
+        category:
+          type: string
+        amountCents:
+          type: integer
+        percentage:
+          type: number
+      required: [category, amountCents, percentage]
+    AccountSummary:
+      type: object
+      properties:
+        incomeCents:
+          type: integer
+        expenseCents:
+          type: integer
+        balanceCents:
+          type: integer
+      required: [incomeCents, expenseCents, balanceCents]
+    Overview:
+      type: object
+      properties:
+        bank:
+          $ref: "#/components/schemas/AccountSummary"
+        cash:
+          $ref: "#/components/schemas/AccountSummary"
+        totalAvailableCents:
+          type: integer
+        incomeCents:
+          type: integer
+        expenseCents:
+          type: integer
+        netCents:
+          type: integer
+        movementCount:
+          type: integer
+        dailyFlow:
+          type: array
+          items:
+            $ref: "#/components/schemas/DailyFlow"
+        expensesByCategory:
+          type: array
+          items:
+            $ref: "#/components/schemas/CategoryExpense"
+        recentMovements:
+          type: array
+          items:
+            $ref: "#/components/schemas/Movement"
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - bank
+        - cash
+        - totalAvailableCents
+        - incomeCents
+        - expenseCents
+        - netCents
+        - movementCount
+        - dailyFlow
+        - expensesByCategory
+        - recentMovements
+        - updatedAt
+    AppSettings:
+      type: object
+      properties:
+        bankOpeningBalanceCents:
+          type: integer
+        cashOpeningBalanceCents:
+          type: integer
+        updatedAt:
+          type: string
+          format: date-time
+      required: [bankOpeningBalanceCents, cashOpeningBalanceCents, updatedAt]
+    SettingsInput:
+      type: object
+      properties:
+        bankOpeningBalanceCents:
+          type: integer
+          minimum: 0
+        cashOpeningBalanceCents:
+          type: integer
+          minimum: 0
+      required: [bankOpeningBalanceCents, cashOpeningBalanceCents]
