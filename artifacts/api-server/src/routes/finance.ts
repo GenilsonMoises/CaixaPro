@@ -1,5 +1,5 @@
 import { Router, type IRouter, type Response } from "express";
-import { asc, eq, sql } from "drizzle-orm";
+import { and, asc, eq, sql } from "drizzle-orm";
 import {
   CreateCategoryBody,
   CreateCategoryResponse,
@@ -10,6 +10,7 @@ import {
   DeleteCategoryParams,
   DeleteMovementParams,
   DeleteResponsibleParams,
+  GetProfileResponse,
   GetOverviewQueryParams,
   GetOverviewResponse,
   GetSettingsResponse,
@@ -20,6 +21,8 @@ import {
   UpdateCategoryBody,
   UpdateCategoryParams,
   UpdateCategoryResponse,
+  UpdateProfileBody,
+  UpdateProfileResponse,
   UpdateMovementBody,
   UpdateMovementParams,
   UpdateMovementResponse,
@@ -32,7 +35,9 @@ import {
 import {
   categoriesTable,
   db,
-  financeSettingsTable,
+  financeMovementCountersTable,
+  financeUserProfilesTable,
+  financeUserSettingsTable,
   movementsTable,
   responsiblesTable,
 } from "@workspace/db";
@@ -151,6 +156,8 @@ function inFilterRange(row: MovementRow, filters: FilterValues): boolean {
   if (filters.search) {
     const needle = filters.search.trim().toLocaleLowerCase();
     const haystack = [
+      row.movementCode,
+      row.bankName,
       row.date,
       row.type,
       row.account,
@@ -207,24 +214,18 @@ function validateLedger(
   return null;
 }
 
-async function lockSettings(tx: FinanceTx) {
+async function lockSettings(tx: FinanceTx, userId: string) {
   await tx
-    .insert(financeSettingsTable)
-    .values({ id: 1 })
+    .insert(financeUserSettingsTable)
+    .values({ userId })
     .onConflictDoNothing();
   const [settings] = await tx
     .select()
-    .from(financeSettingsTable)
-    .where(eq(financeSettingsTable.id, 1))
+    .from(financeUserSettingsTable)
+    .where(eq(financeUserSettingsTable.userId, userId))
     .for("update");
+  if (!settings) throw new Error("Não foi possível inicializar o livro.");
   return settings;
-}
-
-async function seedDefaultCategories(): Promise<void> {
-  await db
-    .insert(categoriesTable)
-    .values(DEFAULT_CATEGORIES.map((name) => ({ name })))
-    .onConflictDoNothing();
 }
 
 function movementDateToString(date: Date): string {
@@ -237,6 +238,7 @@ function movementValues(
     type?: "income" | "expense" | "transfer";
     account?: Account;
     destinationAccount?: Account | null;
+    bankName?: string | null;
     amountCents?: number;
     category?: string | null;
     description?: string;
@@ -253,6 +255,10 @@ function movementValues(
       data.destinationAccount !== undefined
         ? data.destinationAccount
         : current?.destinationAccount ?? null,
+    bankName:
+      data.bankName !== undefined
+        ? data.bankName?.trim() || null
+        : current?.bankName ?? null,
     amountCents: data.amountCents ?? current?.amountCents,
     category:
       data.category !== undefined
@@ -287,18 +293,103 @@ function movementValues(
   if (merged.type !== "transfer" && merged.destinationAccount) {
     throw new Error("Apenas transferências podem ter uma conta de destino.");
   }
+  const usesBank =
+    merged.account === "bank" ||
+    (merged.type === "transfer" && merged.destinationAccount === "bank");
+  if (usesBank && !merged.bankName) {
+    throw new Error("Indique o nome do banco utilizado neste movimento.");
+  }
+  if (!usesBank) merged.bankName = null;
   return merged as typeof movementsTable.$inferInsert;
+}
+
+async function nextMovementCode(
+  tx: FinanceTx,
+  userId: string,
+  movement: ReturnType<typeof movementValues>,
+): Promise<string> {
+  const prefix =
+    movement.account === "bank" || movement.destinationAccount === "bank"
+      ? "CP"
+      : "CX";
+  const year = Number(movement.date?.slice(0, 4));
+  if (!Number.isInteger(year) || year < 2000 || year > 9999) {
+    throw new Error("A data do movimento não é válida para gerar o código.");
+  }
+  const [counter] = await tx
+    .insert(financeMovementCountersTable)
+    .values({ userId, prefix, year, lastNumber: 1 })
+    .onConflictDoUpdate({
+      target: [
+        financeMovementCountersTable.userId,
+        financeMovementCountersTable.prefix,
+        financeMovementCountersTable.year,
+      ],
+      set: {
+        lastNumber: sql`${financeMovementCountersTable.lastNumber} + 1`,
+      },
+    })
+    .returning({ lastNumber: financeMovementCountersTable.lastNumber });
+  if (!counter) throw new Error("Não foi possível gerar o código do movimento.");
+  return `${prefix}-${year}-${String(counter.lastNumber).padStart(4, "0")}`;
 }
 
 function isLedgerConflict(error: unknown): error is LedgerConflictError {
   return error instanceof LedgerConflictError;
 }
 
-router.get("/categories", async (_req, res): Promise<void> => {
-  await seedDefaultCategories();
+router.use(async (req, _res, next): Promise<void> => {
+  try {
+    await db
+      .insert(financeUserSettingsTable)
+      .values({ userId: req.userId })
+      .onConflictDoNothing();
+    await db
+      .insert(categoriesTable)
+      .values(DEFAULT_CATEGORIES.map((name) => ({ ownerId: req.userId, name })))
+      .onConflictDoNothing();
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
+
+router.get("/profile", async (req, res): Promise<void> => {
+  const [profile] = await db
+    .select({ displayName: financeUserProfilesTable.displayName })
+    .from(financeUserProfilesTable)
+    .where(eq(financeUserProfilesTable.userId, req.userId))
+    .limit(1);
+  res.json(GetProfileResponse.parse({ displayName: profile?.displayName ?? null }));
+});
+
+router.put("/profile", async (req, res): Promise<void> => {
+  const parsed = UpdateProfileBody.safeParse(req.body);
+  if (!parsed.success) {
+    responseError(res, 400, parsed.error.message);
+    return;
+  }
+  const displayName = parsed.data.displayName.trim();
+  if (displayName.length < 2) {
+    responseError(res, 400, "Indique o nome do funcionário.");
+    return;
+  }
+  const [profile] = await db
+    .insert(financeUserProfilesTable)
+    .values({ userId: req.userId, displayName })
+    .onConflictDoUpdate({
+      target: financeUserProfilesTable.userId,
+      set: { displayName, updatedAt: new Date() },
+    })
+    .returning({ displayName: financeUserProfilesTable.displayName });
+  res.json(UpdateProfileResponse.parse(profile));
+});
+
+router.get("/categories", async (req, res): Promise<void> => {
   const rows = await db
     .select()
     .from(categoriesTable)
+    .where(eq(categoriesTable.ownerId, req.userId))
     .orderBy(asc(categoriesTable.name));
   res.json(ListCategoriesResponse.parse(rows));
 });
@@ -317,7 +408,12 @@ router.post("/categories", async (req, res): Promise<void> => {
   const [duplicate] = await db
     .select({ id: categoriesTable.id })
     .from(categoriesTable)
-    .where(sql`lower(${categoriesTable.name}) = lower(${name})`)
+    .where(
+      and(
+        eq(categoriesTable.ownerId, req.userId),
+        sql`lower(${categoriesTable.name}) = lower(${name})`,
+      ),
+    )
     .limit(1);
   if (duplicate) {
     responseError(res, 400, "Esta categoria já existe.");
@@ -325,7 +421,7 @@ router.post("/categories", async (req, res): Promise<void> => {
   }
   const [created] = await db
     .insert(categoriesTable)
-    .values({ name })
+    .values({ ownerId: req.userId, name })
     .returning();
   res.status(201).json(CreateCategoryResponse.parse(created));
 });
@@ -345,7 +441,12 @@ router.patch("/categories/:id", async (req, res): Promise<void> => {
   const [existing] = await db
     .select()
     .from(categoriesTable)
-    .where(eq(categoriesTable.id, params.data.id))
+    .where(
+      and(
+        eq(categoriesTable.id, params.data.id),
+        eq(categoriesTable.ownerId, req.userId),
+      ),
+    )
     .limit(1);
   if (!existing) {
     responseError(res, 404, "Categoria não encontrada.");
@@ -354,7 +455,12 @@ router.patch("/categories/:id", async (req, res): Promise<void> => {
   const [duplicate] = await db
     .select({ id: categoriesTable.id })
     .from(categoriesTable)
-    .where(sql`lower(${categoriesTable.name}) = lower(${name})`)
+    .where(
+      and(
+        eq(categoriesTable.ownerId, req.userId),
+        sql`lower(${categoriesTable.name}) = lower(${name})`,
+      ),
+    )
     .limit(1);
   if (duplicate && duplicate.id !== existing.id) {
     responseError(res, 400, "Esta categoria já existe.");
@@ -363,13 +469,23 @@ router.patch("/categories/:id", async (req, res): Promise<void> => {
   const [updated] = await db
     .update(categoriesTable)
     .set({ name })
-    .where(eq(categoriesTable.id, params.data.id))
+    .where(
+      and(
+        eq(categoriesTable.id, params.data.id),
+        eq(categoriesTable.ownerId, req.userId),
+      ),
+    )
     .returning();
   if (existing.name !== name) {
     await db
       .update(movementsTable)
       .set({ category: name })
-      .where(eq(movementsTable.category, existing.name));
+      .where(
+        and(
+          eq(movementsTable.ownerId, req.userId),
+          eq(movementsTable.category, existing.name),
+        ),
+      );
   }
   res.json(UpdateCategoryResponse.parse(updated));
 });
@@ -382,7 +498,12 @@ router.delete("/categories/:id", async (req, res): Promise<void> => {
   }
   const [deleted] = await db
     .delete(categoriesTable)
-    .where(eq(categoriesTable.id, params.data.id))
+    .where(
+      and(
+        eq(categoriesTable.id, params.data.id),
+        eq(categoriesTable.ownerId, req.userId),
+      ),
+    )
     .returning();
   if (!deleted) {
     responseError(res, 404, "Categoria não encontrada.");
@@ -391,10 +512,11 @@ router.delete("/categories/:id", async (req, res): Promise<void> => {
   res.sendStatus(204);
 });
 
-router.get("/responsibles", async (_req, res): Promise<void> => {
+router.get("/responsibles", async (req, res): Promise<void> => {
   const rows = await db
     .select()
     .from(responsiblesTable)
+    .where(eq(responsiblesTable.ownerId, req.userId))
     .orderBy(asc(responsiblesTable.name));
   res.json(ListResponsiblesResponse.parse(rows));
 });
@@ -413,6 +535,7 @@ router.post("/responsibles", async (req, res): Promise<void> => {
   const [created] = await db
     .insert(responsiblesTable)
     .values({
+      ownerId: req.userId,
       name,
       role: parsed.data.role?.trim() || null,
       active: parsed.data.active ?? true,
@@ -431,7 +554,12 @@ router.patch("/responsibles/:id", async (req, res): Promise<void> => {
   const [existing] = await db
     .select()
     .from(responsiblesTable)
-    .where(eq(responsiblesTable.id, params.data.id))
+    .where(
+      and(
+        eq(responsiblesTable.id, params.data.id),
+        eq(responsiblesTable.ownerId, req.userId),
+      ),
+    )
     .limit(1);
   if (!existing) {
     responseError(res, 404, "Responsável não encontrado.");
@@ -451,13 +579,23 @@ router.patch("/responsibles/:id", async (req, res): Promise<void> => {
         : {}),
       ...(body.data.active !== undefined ? { active: body.data.active } : {}),
     })
-    .where(eq(responsiblesTable.id, params.data.id))
+    .where(
+      and(
+        eq(responsiblesTable.id, params.data.id),
+        eq(responsiblesTable.ownerId, req.userId),
+      ),
+    )
     .returning();
   if (name && name !== existing.name) {
     await db
       .update(movementsTable)
       .set({ responsible: name })
-      .where(eq(movementsTable.responsible, existing.name));
+      .where(
+        and(
+          eq(movementsTable.ownerId, req.userId),
+          eq(movementsTable.responsible, existing.name),
+        ),
+      );
   }
   res.json(UpdateResponsibleResponse.parse(updated));
 });
@@ -471,7 +609,12 @@ router.delete("/responsibles/:id", async (req, res): Promise<void> => {
   const [existing] = await db
     .select()
     .from(responsiblesTable)
-    .where(eq(responsiblesTable.id, params.data.id))
+    .where(
+      and(
+        eq(responsiblesTable.id, params.data.id),
+        eq(responsiblesTable.ownerId, req.userId),
+      ),
+    )
     .limit(1);
   if (!existing) {
     responseError(res, 404, "Responsável não encontrado.");
@@ -479,7 +622,12 @@ router.delete("/responsibles/:id", async (req, res): Promise<void> => {
   }
   await db
     .delete(responsiblesTable)
-    .where(eq(responsiblesTable.id, params.data.id));
+    .where(
+      and(
+        eq(responsiblesTable.id, params.data.id),
+        eq(responsiblesTable.ownerId, req.userId),
+      ),
+    );
   res.sendStatus(204);
 });
 
@@ -495,6 +643,7 @@ router.get("/movements", async (req, res): Promise<void> => {
   const rows = await db
     .select()
     .from(movementsTable)
+    .where(eq(movementsTable.ownerId, req.userId))
     .orderBy(asc(movementsTable.date), asc(movementsTable.id));
   const results = rows
     .filter((row) => inFilterRange(row, filters))
@@ -521,14 +670,16 @@ router.post("/movements", async (req, res): Promise<void> => {
   }
   try {
     const created = await db.transaction(async (tx) => {
-      const settings = await lockSettings(tx);
+      const settings = await lockSettings(tx, req.userId);
+      const movementCode = await nextMovementCode(tx, req.userId, values);
       const [row] = await tx
         .insert(movementsTable)
-        .values(values)
+        .values({ ...values, ownerId: req.userId, movementCode })
         .returning();
       const allRows = await tx
         .select()
         .from(movementsTable)
+        .where(eq(movementsTable.ownerId, req.userId))
         .orderBy(asc(movementsTable.date), asc(movementsTable.id));
       const conflict = validateLedger(settings, allRows);
       if (conflict) throw conflict;
@@ -553,22 +704,33 @@ router.patch("/movements/:id", async (req, res): Promise<void> => {
   }
   try {
     const updated = await db.transaction(async (tx) => {
-      const settings = await lockSettings(tx);
+      const settings = await lockSettings(tx, req.userId);
       const [current] = await tx
         .select()
         .from(movementsTable)
-        .where(eq(movementsTable.id, params.data.id))
+        .where(
+          and(
+            eq(movementsTable.id, params.data.id),
+            eq(movementsTable.ownerId, req.userId),
+          ),
+        )
         .limit(1);
       if (!current) return null;
       const values = movementValues(body.data, current);
       const [row] = await tx
         .update(movementsTable)
         .set(values)
-        .where(eq(movementsTable.id, params.data.id))
+        .where(
+          and(
+            eq(movementsTable.id, params.data.id),
+            eq(movementsTable.ownerId, req.userId),
+          ),
+        )
         .returning();
       const allRows = await tx
         .select()
         .from(movementsTable)
+        .where(eq(movementsTable.ownerId, req.userId))
         .orderBy(asc(movementsTable.date), asc(movementsTable.id));
       const conflict = validateLedger(settings, allRows);
       if (conflict) throw conflict;
@@ -588,6 +750,7 @@ router.patch("/movements/:id", async (req, res): Promise<void> => {
       error instanceof Error &&
       (error.message.startsWith("Apenas transferências") ||
         error.message.startsWith("Escolha uma conta") ||
+          error.message.startsWith("Indique o nome do banco") ||
         error.message.startsWith("A categoria") ||
         error.message.startsWith("Preencha"))
     ) {
@@ -606,15 +769,21 @@ router.delete("/movements/:id", async (req, res): Promise<void> => {
   }
   try {
     const deleted = await db.transaction(async (tx) => {
-      const settings = await lockSettings(tx);
+      const settings = await lockSettings(tx, req.userId);
       const [row] = await tx
         .delete(movementsTable)
-        .where(eq(movementsTable.id, params.data.id))
+        .where(
+          and(
+            eq(movementsTable.id, params.data.id),
+            eq(movementsTable.ownerId, req.userId),
+          ),
+        )
         .returning();
       if (!row) return null;
       const allRows = await tx
         .select()
         .from(movementsTable)
+        .where(eq(movementsTable.ownerId, req.userId))
         .orderBy(asc(movementsTable.date), asc(movementsTable.id));
       const conflict = validateLedger(settings, allRows);
       if (conflict) throw conflict;
@@ -644,17 +813,18 @@ router.get("/overview", async (req, res): Promise<void> => {
     return;
   }
   await db
-    .insert(financeSettingsTable)
-    .values({ id: 1 })
+    .insert(financeUserSettingsTable)
+    .values({ userId: req.userId })
     .onConflictDoNothing();
   const [settings] = await db
     .select()
-    .from(financeSettingsTable)
-    .where(eq(financeSettingsTable.id, 1))
+    .from(financeUserSettingsTable)
+    .where(eq(financeUserSettingsTable.userId, req.userId))
     .limit(1);
   const rows = await db
     .select()
     .from(movementsTable)
+    .where(eq(movementsTable.ownerId, req.userId))
     .orderBy(asc(movementsTable.date), asc(movementsTable.id));
   const selected = rows.filter((row) => inFilterRange(row, filters));
   const totals = {
@@ -736,15 +906,15 @@ router.get("/overview", async (req, res): Promise<void> => {
   res.json(GetOverviewResponse.parse(payload));
 });
 
-router.get("/settings", async (_req, res): Promise<void> => {
+router.get("/settings", async (req, res): Promise<void> => {
   await db
-    .insert(financeSettingsTable)
-    .values({ id: 1 })
+    .insert(financeUserSettingsTable)
+    .values({ userId: req.userId })
     .onConflictDoNothing();
   const [settings] = await db
     .select()
-    .from(financeSettingsTable)
-    .where(eq(financeSettingsTable.id, 1))
+    .from(financeUserSettingsTable)
+    .where(eq(financeUserSettingsTable.userId, req.userId))
     .limit(1);
   res.json(GetSettingsResponse.parse(settings));
 });
@@ -757,10 +927,11 @@ router.put("/settings", async (req, res): Promise<void> => {
   }
   try {
     const updated = await db.transaction(async (tx) => {
-      const current = await lockSettings(tx);
+      const current = await lockSettings(tx, req.userId);
       const rows = await tx
         .select()
         .from(movementsTable)
+        .where(eq(movementsTable.ownerId, req.userId))
         .orderBy(asc(movementsTable.date), asc(movementsTable.id));
       const proposed = {
         bankOpeningBalanceCents: parsed.data.bankOpeningBalanceCents,
@@ -769,9 +940,9 @@ router.put("/settings", async (req, res): Promise<void> => {
       const conflict = validateLedger(proposed, rows);
       if (conflict) throw conflict;
       const [result] = await tx
-        .update(financeSettingsTable)
+        .update(financeUserSettingsTable)
         .set({ ...proposed, updatedAt: new Date() })
-        .where(eq(financeSettingsTable.id, current.id))
+        .where(eq(financeUserSettingsTable.userId, current.userId))
         .returning();
       return result;
     });

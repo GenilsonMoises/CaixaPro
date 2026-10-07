@@ -1,10 +1,13 @@
-import { type ReactNode, createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query';
-import { Link, Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
+import { Link, Redirect, Route, Switch, useLocation, Router as WouterRouter } from 'wouter';
 import { useForm } from 'react-hook-form';
+import { ClerkProvider, SignIn, SignUp, useClerk, useUser } from '@clerk/react';
+import { publishableKeyFromHost } from '@clerk/react/internal';
+import { shadcn } from '@clerk/themes';
 import {
   ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Banknote, CalendarDays, Check,
-  CircleDollarSign, Download, FileSpreadsheet, FileText, Filter,
+  CircleDollarSign, Download, FileSpreadsheet, FileText, Filter, LogOut,
   LayoutDashboard, Menu, Pencil, Plus, Search, Settings2, Tag,
   Trash2, UsersRound, Wallet, X, Landmark, Clock3, RefreshCw, Eye, TrendingUp,
 } from 'lucide-react';
@@ -13,8 +16,9 @@ import {
   useListResponsibles, useCreateResponsible, useUpdateResponsible, useDeleteResponsible,
   useListMovements, useCreateMovement, useUpdateMovement, useDeleteMovement,
   useGetOverview, useGetSettings, useUpdateSettings,
+  useGetProfile, useUpdateProfile,
   getListCategoriesQueryKey, getListResponsiblesQueryKey, getListMovementsQueryKey,
-  getGetOverviewQueryKey, getGetSettingsQueryKey,
+  getGetOverviewQueryKey, getGetSettingsQueryKey, getGetProfileQueryKey,
 } from '@workspace/api-client-react';
 import type {
   Movement, MovementInput, MovementUpdate, ListMovementsParams, GetOverviewParams,
@@ -25,9 +29,75 @@ import { createCsvBlob, createXlsxBlob } from '@/lib/export';
 import { ErrorBoundary } from '@/components/error-boundary';
 import { Toaster } from '@/components/ui/toaster';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import AuthLanding from '@/components/auth/AuthLanding';
 import NotFound from '@/pages/not-found';
 
 const queryClient = new QueryClient();
+const basePath = import.meta.env.BASE_URL.replace(/\/$/, '');
+const clerkPubKey = publishableKeyFromHost(
+  window.location.hostname,
+  import.meta.env.VITE_CLERK_PUBLISHABLE_KEY,
+);
+const clerkProxyUrl = import.meta.env.VITE_CLERK_PROXY_URL;
+
+function stripBase(path: string): string {
+  return basePath && path.startsWith(basePath)
+    ? path.slice(basePath.length) || '/'
+    : path;
+}
+
+if (!clerkPubKey) {
+  throw new Error('Missing VITE_CLERK_PUBLISHABLE_KEY in the environment.');
+}
+
+const clerkAppearance = {
+  theme: shadcn,
+  cssLayerName: 'clerk',
+  options: {
+    logoPlacement: 'inside' as const,
+    logoLinkUrl: basePath || '/',
+    logoImageUrl: `${window.location.origin}${basePath}/logo.svg`,
+  },
+  variables: {
+    colorPrimary: '#1769AA',
+    colorForeground: '#123B63',
+    colorMutedForeground: '#60778D',
+    colorDanger: '#C93B37',
+    colorBackground: '#FFFFFF',
+    colorInput: '#FFFFFF',
+    colorInputForeground: '#123B63',
+    colorNeutral: '#CBD5E1',
+    fontFamily: 'DM Sans, sans-serif',
+    borderRadius: '0.75rem',
+  },
+  elements: {
+    rootBox: 'w-full flex justify-center',
+    cardBox: 'bg-white rounded-2xl w-[440px] max-w-full overflow-hidden shadow-[0_24px_70px_rgba(18,59,99,.12)]',
+    card: '!shadow-none !border-0 !bg-transparent !rounded-none',
+    footer: '!shadow-none !border-0 !bg-transparent !rounded-none',
+    headerTitle: 'font-[Manrope] text-[#123B63] font-extrabold tracking-tight',
+    headerSubtitle: 'text-[#60778D]',
+    socialButtonsBlockButtonText: 'font-semibold text-[#123B63]',
+    formFieldLabel: 'font-semibold text-[#244B6D]',
+    footerActionLink: 'font-semibold text-[#1769AA] hover:text-[#123B63]',
+    footerActionText: 'text-[#60778D]',
+    dividerText: 'text-[#7A8EA1]',
+    identityPreviewEditButton: 'font-semibold text-[#1769AA]',
+    formFieldSuccessText: 'text-[#267A3F]',
+    alertText: 'text-[#8F2825]',
+    logoBox: 'mb-2',
+    logoImage: 'h-10 w-10',
+    socialButtonsBlockButton: 'border-slate-200 bg-white hover:bg-[#F5F8FC]',
+    formButtonPrimary: 'bg-[#1769AA] font-semibold hover:bg-[#123B63]',
+    formFieldInput: 'border-slate-200 bg-white text-[#123B63] focus:border-[#1769AA]',
+    footerAction: 'text-[#60778D]',
+    dividerLine: 'bg-slate-200',
+    alert: 'border-red-200 bg-red-50',
+    otpCodeFieldInput: 'border-slate-200 text-[#123B63]',
+    formFieldRow: 'gap-2',
+    main: 'text-[#123B63]',
+  },
+};
 type Filters = {
   startDate?: string;
   endDate?: string;
@@ -39,6 +109,7 @@ type Filters = {
 };
 const FilterContext = createContext<{ filters: Filters; setFilters: (next: Filters) => void }>({ filters: {}, setFilters: () => undefined });
 const useGlobalFilters = () => useContext(FilterContext);
+const EmployeeNameContext = createContext('');
 const money = (cents = 0) => {
   const absolute = Math.abs(Math.round(cents));
   const integer = Math.floor(absolute / 100).toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
@@ -73,11 +144,27 @@ const errorMessage = (error: unknown, fallback: string) => {
 const inputClass = 'h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm text-slate-800 outline-none transition placeholder:text-slate-400 focus:border-[#1769AA] focus:ring-4 focus:ring-[#1769AA]/10';
 const buttonPrimary = 'inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-[#1769AA] px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-[#123B63] active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50';
 const buttonLight = 'inline-flex h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-semibold text-slate-700 transition hover:border-slate-300 hover:bg-slate-50 active:scale-[.98]';
+const BANK_OPTIONS = [
+  'BAI',
+  'BFA',
+  'Banco BIC',
+  'Banco Sol',
+  'BPC',
+  'Banco Millennium Atlântico',
+  'Banco Caixa Geral Angola',
+  'Banco Económico',
+  'Banco Keve',
+  'Banco Yetu',
+  'Banco BIR',
+  'Standard Bank Angola',
+];
 
 function Shell({ children }: { children: ReactNode }) {
   const [path] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { filters, setFilters } = useGlobalFilters();
+  const employeeName = useContext(EmployeeNameContext);
+  const { signOut } = useClerk();
   const categories = useListCategories();
   const responsibles = useListResponsibles();
   const fixedAccount = path === '/caixa' ? 'cash' : path === '/banco' ? 'bank' : undefined;
@@ -100,7 +187,7 @@ function Shell({ children }: { children: ReactNode }) {
       <div className="mb-9 flex items-center justify-between px-2">
         <Link href="/" className="flex items-center gap-3" onClick={() => setMobileOpen(false)}>
           <div className="grid h-10 w-10 place-items-center rounded-[14px] bg-[#1769AA] shadow-inner"><CircleDollarSign size={23} /></div>
-          <div><p className="font-[Manrope] text-[15px] font-extrabold tracking-tight">Conta Clara</p><p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[.18em] text-blue-200/70">Gestão financeira</p></div>
+          <div><p className="font-[Manrope] text-[15px] font-extrabold tracking-tight">CaixaPro</p><p className="mt-0.5 text-[10px] font-semibold uppercase tracking-[.18em] text-blue-200/70">Livro financeiro privado</p></div>
         </Link>
         <button onClick={() => setMobileOpen(false)} className="rounded-lg p-2 text-white/70 hover:bg-white/10 md:hidden"><X size={18} /></button>
       </div>
@@ -119,7 +206,7 @@ function Shell({ children }: { children: ReactNode }) {
         <p className="text-xs font-semibold">Tudo no seu ritmo</p>
         <p className="mt-1 text-[11px] leading-relaxed text-blue-100/60">Registe os movimentos do dia e mantenha as contas em ordem.</p>
       </div>
-      <p className="px-2 pt-4 text-[10px] text-blue-100/40">Conta Clara · Kwanza</p>
+      <p className="px-2 pt-4 text-[10px] text-blue-100/40">CaixaPro · Kwanza</p>
     </aside>
     <div className="md:pl-[252px]">
       <header className="sticky top-0 z-30 border-b border-[#e5ebf2] bg-[#F5F8FC]/90 px-4 py-3 backdrop-blur-xl sm:px-7 lg:px-10">
@@ -129,7 +216,11 @@ function Shell({ children }: { children: ReactNode }) {
             <Search size={17} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input aria-label="Pesquisar movimentos" data-testid="input-global-search" value={filters.search || ''} onChange={event => setFilters({ ...filters, search: event.target.value || undefined })} placeholder="Pesquisar movimentos..." className={`${inputClass} h-10 border-transparent bg-white pl-10 shadow-[0_2px_8px_rgba(18,59,99,.04)]`} />
           </div>
-          <div className="ml-auto hidden items-center gap-2 text-right sm:flex"><div className="grid h-9 w-9 place-items-center rounded-full bg-[#e4eff9] text-xs font-bold text-[#1769AA]">AO</div><div><p className="text-xs font-semibold text-[#123B63]">Operação diária</p><p className="text-[10px] text-slate-400">Kwanza angolano</p></div></div>
+          <div className="ml-auto flex min-w-0 items-center gap-2 text-right">
+            <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#e4eff9] text-[10px] font-bold text-[#1769AA] sm:h-9 sm:w-9 sm:text-xs">{initials(employeeName || 'FP')}</div>
+            <div className="min-w-0"><p className="max-w-[92px] truncate text-[11px] font-semibold text-[#123B63] sm:max-w-[170px] sm:text-xs">{employeeName}</p><p className="hidden text-[10px] text-slate-400 sm:block">Funcionário · Kwanza angolano</p></div>
+            <button type="button" onClick={() => void signOut({ redirectUrl: basePath || '/' })} aria-label="Terminar sessão" title="Terminar sessão" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"><LogOut size={16}/></button>
+          </div>
         </div>
         <details className="group mx-auto mt-3 max-w-[1440px]">
           <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-semibold text-[#1769AA]" data-testid="button-global-filters">
@@ -217,15 +308,21 @@ function MovementModal({ open, close, movement, initialType }: { open: boolean; 
     date: movement.date.slice(0, 10), type: movement.type, account: movement.account, destinationAccount: movement.destinationAccount || 'cash',
     amount: (movement.amountCents / 100).toFixed(2), category: movement.category || '', description: movement.description,
     responsible: movement.responsible || '', note: movement.note || '',
-  } : { date: new Date().toISOString().slice(0, 10), type: initialType || 'expense', account: 'cash', destinationAccount: 'bank', amount: '', category: '', description: '', responsible: '', note: '' };
+    bankChoice: movement.bankName ? (BANK_OPTIONS.includes(movement.bankName) ? movement.bankName : '__other__') : '',
+    customBankName: movement.bankName && !BANK_OPTIONS.includes(movement.bankName) ? movement.bankName : '',
+  } : { date: new Date().toISOString().slice(0, 10), type: initialType || 'expense', account: 'cash', destinationAccount: 'bank', amount: '', category: '', description: '', responsible: '', note: '', bankChoice: '', customBankName: '' };
   const form = useForm({ defaultValues: defaults });
   useEffect(() => { if (open) form.reset(defaults); }, [open, movement?.id, initialType]);
   if (!open) return null;
   const type = form.watch('type');
+  const account = form.watch('account');
+  const destinationAccount = form.watch('destinationAccount');
+  const usesBank = account === 'bank' || (type === 'transfer' && destinationAccount === 'bank');
   const submit = form.handleSubmit(values => {
     const payload: MovementInput = {
       date: values.date, type: values.type as MovementInput['type'], account: values.account as MovementInput['account'],
       destinationAccount: values.type === 'transfer' ? values.destinationAccount as MovementInput['account'] : null,
+      bankName: usesBank ? (values.bankChoice === '__other__' ? values.customBankName.trim() : values.bankChoice) || null : null,
       amountCents: parseKwanzaCents(values.amount), category: values.type !== 'transfer' ? values.category || null : null,
       description: values.description.trim(), responsible: values.responsible || null, note: values.note || null,
     };
@@ -252,6 +349,18 @@ function MovementModal({ open, close, movement, initialType }: { open: boolean; 
           {type === 'transfer' ? <label className="space-y-1.5 text-xs font-semibold text-slate-600">Conta de destino<select className={inputClass} {...form.register('destinationAccount')}><option value={form.watch('account') === 'cash' ? 'bank' : 'cash'}>{form.watch('account') === 'cash' ? 'Banco' : 'Caixa'}</option></select></label> :
             <label className="space-y-1.5 text-xs font-semibold text-slate-600">Categoria *<select required className={inputClass} {...form.register('category', { required: true })}><option value="">Seleccione uma categoria</option>{(categoriesQuery.data || []).map((item: Category) => <option key={item.id} value={item.name}>{item.name}</option>)}</select></label>}
         </div>
+        {usesBank && <div className={`grid gap-4 ${form.watch('bankChoice') === '__other__' ? 'sm:grid-cols-2' : ''}`}>
+          <label className="space-y-1.5 text-xs font-semibold text-slate-600">Banco utilizado *
+            <select className={inputClass} {...form.register('bankChoice', { required: usesBank })}>
+              <option value="">Seleccione o banco</option>
+              {BANK_OPTIONS.map(name => <option key={name} value={name}>{name}</option>)}
+              <option value="__other__">Outro banco</option>
+            </select>
+          </label>
+          {form.watch('bankChoice') === '__other__' && <label className="space-y-1.5 text-xs font-semibold text-slate-600">Nome do banco *
+            <input autoComplete="organization" maxLength={120} className={inputClass} placeholder="Escreva o nome do banco" {...form.register('customBankName', { required: usesBank && form.watch('bankChoice') === '__other__' })} />
+          </label>}
+        </div>}
         <label className="block space-y-1.5 text-xs font-semibold text-slate-600">Responsável<select className={inputClass} {...form.register('responsible')}><option value="">Sem responsável</option>{(responsibleQuery.data || []).filter((person: Responsible) => person.active || person.name === movement?.responsible).map(person => <option key={person.id} value={person.name}>{person.name}{!person.active ? ' (inactivo)' : ''}</option>)}</select></label>
         <label className="block space-y-1.5 text-xs font-semibold text-slate-600">Descrição *<input placeholder="Ex.: Pagamento de fornecedor" className={inputClass} {...form.register('description', { required: true, minLength: 1 })} /></label>
         <label className="block space-y-1.5 text-xs font-semibold text-slate-600">Nota (opcional)<textarea rows={2} placeholder="Acrescente um detalhe útil..." className={`${inputClass} h-auto resize-none py-3`} {...form.register('note')} /></label>
@@ -267,20 +376,22 @@ function MovementTable({ movements, onEdit, onDelete, onDetails, deletingId, rea
   return <>
     <div className="divide-y divide-slate-100 md:hidden print:hidden">
       {movements.map(m => <article key={m.id} data-testid={`card-movement-${m.id}`} className="px-4 py-4">
-        <div className="flex items-center justify-between gap-2"><span className="text-[11px] text-slate-500">{dateLabel(m.date)}</span><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${m.type === 'income' ? 'bg-[#e8f7ed] text-[#267a3f]' : m.type === 'expense' ? 'bg-[#fff0ef] text-[#c93b37]' : 'bg-[#eaf3fb] text-[#1769AA]'}`}>{movementTypeName(m.type).toUpperCase()}</span></div>
-        <div className="mt-3 flex items-start justify-between gap-3"><div className="min-w-0"><p className="break-words text-sm font-semibold text-[#123B63]">{m.description}</p><p className="mt-1 text-[11px] text-slate-500">{m.type === 'transfer' ? `${accountName(m.account)} → ${accountName(m.destinationAccount)}` : accountName(m.account)}</p></div><p className={`shrink-0 whitespace-nowrap text-sm font-bold ${m.type === 'income' ? 'text-[#36A85A]' : m.type === 'expense' ? 'text-[#EF4444]' : 'text-[#1769AA]'}`}>{m.type === 'income' ? '+' : m.type === 'expense' ? '−' : ''}{money(m.amountCents)}</p></div>
+        <div className="flex items-center justify-between gap-2"><div className="flex min-w-0 items-center gap-2"><span className="shrink-0 text-[11px] text-slate-500">{dateLabel(m.date)}</span><span className="truncate rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-bold text-slate-600">{m.movementCode}</span></div><span className={`rounded-full px-2.5 py-1 text-[10px] font-bold ${m.type === 'income' ? 'bg-[#e8f7ed] text-[#267a3f]' : m.type === 'expense' ? 'bg-[#fff0ef] text-[#c93b37]' : 'bg-[#eaf3fb] text-[#1769AA]'}`}>{movementTypeName(m.type).toUpperCase()}</span></div>
+        <div className="mt-3 flex items-start justify-between gap-3"><div className="min-w-0"><p className="break-words text-sm font-semibold text-[#123B63]">{m.description}</p><p className="mt-1 text-[11px] text-slate-500">{m.type === 'transfer' ? `${accountName(m.account)} → ${accountName(m.destinationAccount)}` : accountName(m.account)}{m.bankName ? ` · ${m.bankName}` : ''}</p></div><p className={`shrink-0 whitespace-nowrap text-sm font-bold ${m.type === 'income' ? 'text-[#36A85A]' : m.type === 'expense' ? 'text-[#EF4444]' : 'text-[#1769AA]'}`}>{m.type === 'income' ? '+' : m.type === 'expense' ? '−' : ''}{money(m.amountCents)}</p></div>
         <div className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2 border-t border-slate-100 pt-3 text-[11px]"><div><p className="text-slate-400">Categoria</p><p className="mt-0.5 font-medium text-slate-700">{m.category || (m.type === 'transfer' ? 'Transferência' : '—')}</p></div><div><p className="text-slate-400">Responsável</p><p className="mt-0.5 font-medium text-slate-700">{m.responsible || '—'}</p></div><div className="col-span-2"><p className="text-slate-400">Observação</p><p className="mt-0.5 break-words text-slate-600">{m.note || '—'}</p></div></div>
         {!readOnly && <div className="mt-3 flex justify-end gap-1 border-t border-slate-100 pt-2"><button aria-label="Ver detalhe" title="Ver detalhe" onClick={() => onDetails(m)} className="rounded-lg p-2 text-slate-400 hover:bg-blue-50 hover:text-[#1769AA]"><Eye size={16}/></button><button aria-label="Editar" title="Editar" onClick={() => onEdit(m)} className="rounded-lg p-2 text-slate-400 hover:bg-blue-50 hover:text-[#1769AA]"><Pencil size={15}/></button><button aria-label="Eliminar" title="Eliminar" onClick={() => onDelete(m)} disabled={deletingId === m.id} className="rounded-lg p-2 text-slate-400 hover:bg-red-50 hover:text-[#EF4444]"><Trash2 size={15}/></button></div>}
       </article>)}
     </div>
-    <div className="hidden overflow-x-auto md:block print:block"><table className="w-full min-w-[1040px] table-fixed text-left"><colgroup><col style={{width:'85px'}}/><col style={{width:'85px'}}/><col style={{width:'130px'}}/><col style={{width:'105px'}}/><col style={{width:'100px'}}/><col style={{width:'150px'}}/><col style={{width:'105px'}}/><col style={{width:'130px'}}/>{!readOnly && <col style={{width:'150px'}}/>}</colgroup><thead><tr className="border-b border-slate-100 text-[10px] font-bold uppercase tracking-[.12em] text-slate-400"><th className="px-3 py-3">Data</th><th className="px-3 py-3">Movimento</th><th className="px-3 py-3 text-right">Valor</th><th className="px-3 py-3">Origem</th><th className="px-3 py-3">Categoria</th><th className="px-3 py-3">Descrição</th><th className="px-3 py-3">Responsável</th><th className="px-3 py-3">Observação</th>{!readOnly && <th className="px-3 py-3 text-right">Ações</th>}</tr></thead><tbody>{movements.map((m, index) => {
+    <div className="hidden overflow-x-auto md:block print:block"><table className="w-full min-w-[1300px] table-fixed text-left"><colgroup><col style={{width:'145px'}}/><col style={{width:'95px'}}/><col style={{width:'85px'}}/><col style={{width:'125px'}}/><col style={{width:'110px'}}/><col style={{width:'130px'}}/><col style={{width:'110px'}}/><col style={{width:'160px'}}/><col style={{width:'110px'}}/><col style={{width:'140px'}}/>{!readOnly && <col style={{width:'145px'}}/>}</colgroup><thead><tr className="border-b border-slate-100 text-[10px] font-bold uppercase tracking-[.12em] text-slate-400"><th className="px-3 py-3">Código</th><th className="px-3 py-3">Data</th><th className="px-3 py-3">Movimento</th><th className="px-3 py-3 text-right">Valor</th><th className="px-3 py-3">Origem</th><th className="px-3 py-3">Banco</th><th className="px-3 py-3">Categoria</th><th className="px-3 py-3">Descrição</th><th className="px-3 py-3">Responsável</th><th className="px-3 py-3">Observação</th>{!readOnly && <th className="px-3 py-3 text-right">Ações</th>}</tr></thead><tbody>{movements.map((m, index) => {
     const badgeColor = m.type === 'income' ? 'bg-[#e8f7ed] text-[#267a3f]' : m.type === 'expense' ? 'bg-[#fff0ef] text-[#c93b37]' : 'bg-[#eaf3fb] text-[#1769AA]';
     const amountColor = m.type === 'income' ? 'text-[#36A85A]' : m.type === 'expense' ? 'text-[#EF4444]' : 'text-[#1769AA]';
     return <tr key={m.id} data-testid={`row-movement-${m.id}`} className={`border-b border-slate-50 transition hover:bg-[#f8fbfe] ${index === movements.length - 1 ? 'border-b-0' : ''}`}>
+      <td className="whitespace-nowrap px-3 py-3.5 text-[10px] font-semibold text-slate-600">{m.movementCode}</td>
       <td className="whitespace-nowrap px-3 py-3.5 text-xs text-slate-500">{dateLabel(m.date)}</td>
       <td className="px-3 py-3.5"><span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[10px] font-bold ${badgeColor}`}>{movementTypeName(m.type).toUpperCase()}</span></td>
       <td className={`whitespace-nowrap px-3 py-3.5 text-right text-sm font-bold ${amountColor}`}>{m.type === 'income' ? '+' : m.type === 'expense' ? '−' : ''}{money(m.amountCents)}</td>
       <td className="whitespace-nowrap px-3 py-3.5 text-xs text-slate-600">{m.type === 'transfer' ? `${accountName(m.account)} → ${accountName(m.destinationAccount)}` : accountName(m.account)}</td>
+      <td className="overflow-hidden px-3 py-3.5 text-xs text-slate-600"><span className="block truncate" title={m.bankName || ''}>{m.bankName || '—'}</span></td>
       <td className="overflow-hidden px-3 py-3.5 text-xs text-slate-600"><span className="block truncate" title={m.category || ''}>{m.category || (m.type === 'transfer' ? 'Transferência' : '—')}</span></td>
       <td className="overflow-hidden px-3 py-3.5 text-xs font-semibold text-[#123B63]"><span className="block truncate" title={m.description}>{m.description}</span></td>
       <td className="overflow-hidden px-3 py-3.5 text-xs text-slate-600"><span className="block truncate" title={m.responsible || ''}>{m.responsible || '—'}</span></td>
@@ -351,7 +462,7 @@ function DetailModal({ movement, close, onEdit }: { movement: Movement; close: (
   return <div className="fixed inset-0 z-[75] flex items-end justify-center bg-[#102f4d]/40 p-0 sm:items-center sm:p-5" onMouseDown={e => { if (e.target === e.currentTarget) close(); }}><div className="page-enter w-full rounded-t-[24px] bg-white p-6 shadow-2xl sm:max-w-md sm:rounded-[24px]">
     <div className="flex justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[.17em] text-[#1769AA]">Detalhe do movimento</p><h2 className="mt-1 text-xl font-bold">{movement.description}</h2></div><button onClick={close} className="rounded-lg p-2 text-slate-400 hover:bg-slate-100"><X size={18}/></button></div>
      <p className={`mt-5 font-[Manrope] text-2xl font-extrabold ${movement.type === 'expense' ? 'text-[#EF4444]' : movement.type === 'transfer' ? 'text-[#1769AA]' : 'text-[#36A85A]'}`}>{movement.type === 'expense' ? '−' : movement.type === 'income' ? '+' : ''}{money(movement.amountCents)}</p>
-    <div className="mt-5 divide-y divide-slate-100 rounded-2xl bg-[#F5F8FC] px-4"><InfoRow label="Tipo" value={movementTypeName(movement.type)}/><InfoRow label="Data" value={dateLabel(movement.date)}/><InfoRow label="Conta" value={movement.type === 'transfer' ? `${accountName(movement.account)} → ${accountName(movement.destinationAccount)}` : accountName(movement.account)}/><InfoRow label="Categoria" value={movement.category || 'Sem categoria'}/><InfoRow label="Responsável" value={movement.responsible || 'Sem responsável'}/><InfoRow label="Nota" value={movement.note || 'Sem nota'}/></div>
+     <div className="mt-5 divide-y divide-slate-100 rounded-2xl bg-[#F5F8FC] px-4"><InfoRow label="Código" value={movement.movementCode}/><InfoRow label="Tipo" value={movementTypeName(movement.type)}/><InfoRow label="Data" value={dateLabel(movement.date)}/><InfoRow label="Conta" value={movement.type === 'transfer' ? `${accountName(movement.account)} → ${accountName(movement.destinationAccount)}` : accountName(movement.account)}/>{movement.bankName && <InfoRow label="Banco" value={movement.bankName}/>}<InfoRow label="Categoria" value={movement.category || 'Sem categoria'}/><InfoRow label="Responsável" value={movement.responsible || 'Sem responsável'}/><InfoRow label="Nota" value={movement.note || 'Sem nota'}/></div>
     <div className="mt-5 flex justify-end gap-2"><button onClick={close} className={buttonLight}>Fechar</button><button onClick={onEdit} className={buttonPrimary}><Pencil size={15}/> Editar</button></div>
   </div></div>;
 }
@@ -389,7 +500,7 @@ function Dashboard() {
         {([['Caixa',data?.cash,'cash'],['Banco',data?.bank,'bank']] as const).map(([name,acc]) => <div key={name} className="mb-3 flex flex-col gap-3 rounded-2xl bg-[#F5F8FC] p-4 last:mb-0 sm:flex-row sm:items-center sm:justify-between"><div className="flex min-w-0 items-center gap-3"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-white text-[#1769AA] shadow-sm">{name==='Caixa'?<Wallet size={17}/>:<Landmark size={17}/>}</div><div className="min-w-0"><p className="text-xs font-semibold">{name}</p><p className="mt-1 break-words text-[10px] text-slate-400">Entradas {money(acc?.incomeCents || 0)} · Saídas {money(acc?.expenseCents || 0)}</p></div></div><p className="self-end whitespace-nowrap font-[Manrope] text-sm font-extrabold sm:self-auto">{money(acc?.balanceCents || 0)}</p></div>)}
       </section>
       <section className="surface overflow-hidden"><div className="flex items-center justify-between px-5 py-4"><div><h2 className="font-[Manrope] text-base font-bold">Movimentos recentes</h2><p className="mt-1 text-xs text-slate-400">Actividade mais recente</p></div><Link href="/fluxo-diario" className="text-xs font-semibold text-[#1769AA] hover:underline">Ver todos</Link></div>
-         {(data?.recentMovements || []).length ? <div className="divide-y divide-slate-50">{data?.recentMovements.slice(0,5).map(m => <div key={m.id} className="flex items-center gap-3 px-5 py-3"><div className={`grid h-9 w-9 place-items-center rounded-xl ${m.type==='income'?'bg-[#e8f7ed] text-[#36A85A]':m.type==='expense'?'bg-[#fff0ef] text-[#EF4444]':'bg-[#eaf3fb] text-[#1769AA]'}`}>{m.type==='income'?<ArrowDownLeft size={17}/>:m.type==='expense'?<ArrowUpRight size={17}/>:<RefreshCw size={15}/>}</div><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{m.description}</p><p className="mt-1 text-[10px] text-slate-400">{dateLabel(m.date)} · {m.type==='transfer'?`${accountName(m.account)} → ${accountName(m.destinationAccount)}`:accountName(m.account)}</p></div><p className={`whitespace-nowrap text-xs font-bold ${m.type==='income'?'text-[#36A85A]':m.type==='expense'?'text-[#EF4444]':'text-[#1769AA]'}`}>{m.type==='income'?'+':m.type==='expense'?'−':''}{money(m.amountCents)}</p></div>)}</div> : <EmptyState title="Nenhuma actividade ainda" text="Os seus movimentos recentes vão aparecer aqui."/>}
+          {(data?.recentMovements || []).length ? <div className="divide-y divide-slate-50">{data?.recentMovements.slice(0,5).map(m => <div key={m.id} className="flex items-center gap-3 px-5 py-3"><div className={`grid h-9 w-9 place-items-center rounded-xl ${m.type==='income'?'bg-[#e8f7ed] text-[#36A85A]':m.type==='expense'?'bg-[#fff0ef] text-[#EF4444]':'bg-[#eaf3fb] text-[#1769AA]'}`}>{m.type==='income'?<ArrowDownLeft size={17}/>:m.type==='expense'?<ArrowUpRight size={17}/>:<RefreshCw size={15}/>}</div><div className="min-w-0 flex-1"><p className="truncate text-xs font-semibold">{m.description}</p><p className="mt-1 truncate text-[10px] text-slate-400">{m.movementCode} · {dateLabel(m.date)} · {m.bankName || accountName(m.account)}</p></div><p className={`whitespace-nowrap text-xs font-bold ${m.type==='income'?'text-[#36A85A]':m.type==='expense'?'text-[#EF4444]':'text-[#1769AA]'}`}>{m.type==='income'?'+':m.type==='expense'?'−':''}{money(m.amountCents)}</p></div>)}</div> : <EmptyState title="Nenhuma actividade ainda" text="Os seus movimentos recentes vão aparecer aqui."/>}
       </section>
     </div>
     <p className="mt-5 flex items-center justify-end gap-1.5 text-[10px] text-slate-400"><Clock3 size={12}/> Actualizado {data?.updatedAt ? dateLabel(data.updatedAt) : 'agora'}</p>
@@ -463,8 +574,49 @@ function SettingsPage() {
           <div className="flex justify-end border-t border-slate-100 pt-4"><button disabled={update.isPending} className={buttonPrimary}><Check size={16}/>{update.isPending?'A guardar…':'Guardar saldos'}</button></div></form>
       </section>
       <aside className="rounded-[20px] bg-[#123B63] p-6 text-white"><div className="mb-6 grid h-11 w-11 place-items-center rounded-[15px] bg-white/10"><CircleDollarSign size={22}/></div><p className="text-[10px] font-bold uppercase tracking-[.18em] text-blue-200/70">Um ponto de partida</p><h2 className="mt-2 font-[Manrope] text-xl font-bold">As contas começam no valor certo.</h2><p className="mt-3 text-sm leading-relaxed text-blue-100/70">Os saldos de abertura são somados aos movimentos registados para mostrar o valor disponível em cada conta.</p><div className="mt-6 space-y-3 rounded-2xl border border-white/10 bg-white/[.06] p-4"><div className="flex justify-between text-xs"><span className="text-blue-100/65">Banco</span><b>{money(query.data?.bankOpeningBalanceCents || 0)}</b></div><div className="flex justify-between text-xs"><span className="text-blue-100/65">Caixa</span><b>{money(query.data?.cashOpeningBalanceCents || 0)}</b></div></div></aside>
-    </div>}
+     </div>}
+     <EmployeeProfileSettings/>
   </>;
+}
+
+function EmployeeProfileSettings() {
+  const profile = useGetProfile();
+  const update = useUpdateProfile();
+  const qc = useQueryClient();
+  const [displayName, setDisplayName] = useState('');
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    if (profile.data && !loaded) {
+      setDisplayName(profile.data.displayName || '');
+      setLoaded(true);
+    }
+  }, [profile.data, loaded]);
+  const save = (event: React.FormEvent) => {
+    event.preventDefault();
+    const name = displayName.trim();
+    if (name.length < 2) return;
+    update.mutate(
+      { data: { displayName: name } },
+      {
+        onSuccess: result => {
+          qc.setQueryData(getGetProfileQueryKey(), result);
+          setDisplayName(result.displayName || name);
+        },
+      },
+    );
+  };
+  return <section className="surface mt-5 p-5 sm:p-7">
+    <div className="mb-5 flex items-start gap-3">
+      <div className="grid h-10 w-10 place-items-center rounded-[14px] bg-[#eaf3fb] text-[#1769AA]"><UsersRound size={18}/></div>
+      <div><h2 className="font-[Manrope] text-base font-bold">Perfil do funcionário</h2><p className="mt-1 text-xs text-slate-400">Este nome aparece na sua sessão do CaixaPro.</p></div>
+    </div>
+    {profile.isError ? <ErrorState retry={() => profile.refetch()}/> : <form onSubmit={save} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+      <label className="flex-1 space-y-1.5 text-xs font-semibold text-slate-600">Nome apresentado<input required minLength={2} maxLength={120} value={displayName} onChange={event => setDisplayName(event.target.value)} className={inputClass} placeholder="Nome e apelido"/></label>
+      <button disabled={update.isPending || profile.isLoading || displayName.trim().length < 2} className={buttonPrimary}><Check size={16}/>{update.isPending ? 'A guardar…' : 'Guardar nome'}</button>
+      {update.isSuccess && <span role="status" className="text-xs font-medium text-[#267a3f]">Nome actualizado.</span>}
+      {update.isError && <span role="alert" className="text-xs text-red-700">{errorMessage(update.error, 'Não foi possível actualizar o nome.')}</span>}
+    </form>}
+  </section>;
 }
 
 function ReportsPage() {
@@ -473,11 +625,11 @@ function ReportsPage() {
   const overview = useGetOverview(filters);
   const download = (format: 'csv'|'excel') => {
     const rows = movements.data || [];
-    const headers = ['Data','Tipo','Descrição','Conta','Destino','Categoria','Responsável','Montante (Kz)','Nota'];
-    const exportRows = rows.map(m => [m.date.slice(0,10),movementTypeName(m.type),m.description,accountName(m.account),accountName(m.destinationAccount),m.category||'',m.responsible||'',m.amountCents/100,m.note||'']);
+    const headers = ['Código','Data','Tipo','Descrição','Conta','Banco','Destino','Categoria','Responsável','Montante (Kz)','Nota'];
+    const exportRows = rows.map(m => [m.movementCode,m.date.slice(0,10),movementTypeName(m.type),m.description,accountName(m.account),m.bankName||'',accountName(m.destinationAccount),m.category||'',m.responsible||'',m.amountCents/100,m.note||'']);
     const blob = format === 'excel'
       ? createXlsxBlob(headers, exportRows)
-      : createCsvBlob(headers, exportRows.map(row => row.map((value,index) => index === 7 && typeof value === 'number' ? value.toFixed(2).replace('.', ',') : value)));
+      : createCsvBlob(headers, exportRows.map(row => row.map((value,index) => index === 9 && typeof value === 'number' ? value.toFixed(2).replace('.', ',') : value)));
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -508,10 +660,89 @@ function RoutedErrorBoundary({ children }: { children: ReactNode }) {
   const [location] = useLocation();
   return <ErrorBoundary resetKey={location}>{children}</ErrorBoundary>;
 }
-function App() {
+
+function ClerkQueryClientCacheInvalidator() {
+  const { addListener } = useClerk();
+  const client = useQueryClient();
+  const previousUserId = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    const unsubscribe = addListener(({ user }) => {
+      const userId = user?.id ?? null;
+      if (previousUserId.current !== undefined && previousUserId.current !== userId) {
+        client.clear();
+      }
+      previousUserId.current = userId;
+    });
+    return unsubscribe;
+  }, [addListener, client]);
+  return null;
+}
+
+function AuthLoading() {
+  return <main className="grid min-h-[100dvh] place-items-center bg-[#F5F8FC]">
+    <div className="flex flex-col items-center gap-4 text-center">
+      <img src={`${basePath}/logo.svg`} alt="" className="h-12 w-12"/>
+      <span className="h-6 w-6 animate-spin rounded-full border-2 border-[#1769AA]/20 border-t-[#1769AA]"/>
+      <p className="text-xs font-medium text-slate-500">A preparar a sua conta…</p>
+    </div>
+  </main>;
+}
+
+function SignInPage() {
+  return <main className="flex min-h-[100dvh] flex-col items-center justify-center gap-4 bg-[#F5F8FC] px-4 py-8">
+    <Link href="/" className="text-xs font-semibold text-[#1769AA] hover:underline">← Voltar ao CaixaPro</Link>
+    <SignIn routing="path" path={`${basePath}/sign-in`} signUpUrl={`${basePath}/sign-up`}/>
+  </main>;
+}
+
+function SignUpPage() {
+  return <main className="flex min-h-[100dvh] flex-col items-center justify-center gap-4 bg-[#F5F8FC] px-4 py-8">
+    <Link href="/" className="text-xs font-semibold text-[#1769AA] hover:underline">← Voltar ao CaixaPro</Link>
+    <SignUp routing="path" path={`${basePath}/sign-up`} signInUrl={`${basePath}/sign-in`}/>
+  </main>;
+}
+
+function ProfileSetup({ suggestedName }: { suggestedName: string }) {
+  const update = useUpdateProfile();
+  const client = useQueryClient();
+  const [displayName, setDisplayName] = useState(suggestedName);
+  const save = (event: React.FormEvent) => {
+    event.preventDefault();
+    const name = displayName.trim();
+    if (name.length < 2) return;
+    update.mutate(
+      { data: { displayName: name } },
+      { onSuccess: profile => client.setQueryData(getGetProfileQueryKey(), profile) },
+    );
+  };
+  return <main className="grid min-h-[100dvh] place-items-center bg-[#F5F8FC] px-4 py-8">
+    <section className="w-full max-w-[460px] rounded-[28px] border border-[#dce7f0] bg-white p-6 shadow-[0_24px_70px_rgba(18,59,99,.10)] sm:p-8">
+      <div className="mb-6 flex items-center gap-3"><img src={`${basePath}/logo.svg`} alt="" className="h-11 w-11"/><div><p className="font-[Manrope] text-lg font-extrabold text-[#123B63]">CaixaPro</p><p className="text-xs text-slate-400">Configure o seu livro</p></div></div>
+      <p className="text-[10px] font-bold uppercase tracking-[.17em] text-[#1769AA]">Primeiro acesso</p>
+      <h1 className="mt-2 font-[Manrope] text-2xl font-extrabold text-[#123B63]">Como devemos apresentar o seu nome?</h1>
+      <p className="mt-2 text-sm leading-6 text-slate-500">Este nome será mostrado na sua sessão. O seu livro financeiro começa vazio e só fica visível para esta conta.</p>
+      <form onSubmit={save} className="mt-6 space-y-4">
+        <label className="block space-y-1.5 text-xs font-semibold text-slate-600">Nome do funcionário
+          <input autoFocus required minLength={2} maxLength={120} value={displayName} onChange={event => setDisplayName(event.target.value)} className={inputClass} placeholder="Nome e apelido"/>
+        </label>
+        {update.isError && <p role="alert" className="rounded-xl bg-red-50 px-3 py-2.5 text-xs text-red-700">{errorMessage(update.error, 'Não foi possível guardar o nome.')}</p>}
+        <button disabled={update.isPending || displayName.trim().length < 2} className={`${buttonPrimary} w-full`}>
+          <Check size={16}/>{update.isPending ? 'A guardar…' : 'Criar o meu livro'}
+        </button>
+      </form>
+    </section>
+  </main>;
+}
+
+function FinancialApp({ suggestedName }: { suggestedName: string }) {
+  const profile = useGetProfile();
   const [filters, setFilters] = useState<Filters>({});
-  return <QueryClientProvider client={queryClient}><TooltipProvider><WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, '')}><FilterContext.Provider value={{ filters, setFilters }}>
-    <Shell><RoutedErrorBoundary><Switch>
+  if (profile.isLoading) return <AuthLoading/>;
+  if (profile.isError) return <main className="grid min-h-[100dvh] place-items-center bg-[#F5F8FC] px-4"><div className="w-full max-w-md rounded-2xl bg-white p-6 text-center shadow-sm"><p className="font-semibold text-[#123B63]">Não foi possível abrir o seu livro.</p><p className="mt-2 text-sm text-slate-500">Verifique a ligação e tente novamente.</p><button className={`${buttonPrimary} mt-5`} onClick={() => void profile.refetch()}><RefreshCw size={15}/> Tentar novamente</button></div></main>;
+  if (!profile.data?.displayName) return <ProfileSetup suggestedName={suggestedName}/>;
+  return <EmployeeNameContext.Provider value={profile.data.displayName}>
+    <FilterContext.Provider value={{ filters, setFilters }}>
+      <Shell><RoutedErrorBoundary><Switch>
       <Route path="/" component={Dashboard}/>
       <Route path="/fluxo-diario" component={()=><MovementLedger title="Fluxo diário" subtitle="Acompanhe entradas, saídas e transferências num só lugar."/>}/>
       <Route path="/caixa" component={()=><MovementLedger title="Movimentos de Caixa" subtitle="Veja o dinheiro que entrou e saiu da sua caixa." scope="cash"/>}/>
@@ -522,8 +753,56 @@ function App() {
       <Route path="/relatorios" component={ReportsPage}/>
       <Route path="/configuracoes" component={SettingsPage}/>
       <Route component={NotFound}/>
-    </Switch></RoutedErrorBoundary></Shell>
-  </FilterContext.Provider></WouterRouter><Toaster/></TooltipProvider></QueryClientProvider>;
+      </Switch></RoutedErrorBoundary></Shell>
+    </FilterContext.Provider>
+  </EmployeeNameContext.Provider>;
+}
+
+function AppRoutes() {
+  const { isLoaded, isSignedIn, user } = useUser();
+  const [location, setLocation] = useLocation();
+  if (!isLoaded) return <AuthLoading/>;
+  if (!isSignedIn || !user) {
+    return <Switch>
+      <Route path="/sign-in/*?" component={SignInPage}/>
+      <Route path="/sign-up/*?" component={SignUpPage}/>
+      <Route path="/" component={() => <AuthLanding onSignIn={() => setLocation('/sign-in')} onSignUp={() => setLocation('/sign-up')}/>}/>
+      <Route component={() => <Redirect to="/"/>}/>
+    </Switch>;
+  }
+  if (location.startsWith('/sign-in') || location.startsWith('/sign-up')) {
+    return <Redirect to="/"/>;
+  }
+  return <FinancialApp key={user.id} suggestedName={user.fullName || user.firstName || ''}/>;
+}
+
+function ClerkProviderWithRoutes() {
+  const [, setLocation] = useLocation();
+  return <ClerkProvider
+    publishableKey={clerkPubKey}
+    proxyUrl={clerkProxyUrl}
+    appearance={clerkAppearance}
+    signInUrl={`${basePath}/sign-in`}
+    signUpUrl={`${basePath}/sign-up`}
+    localization={{
+      signIn: { start: { title: 'Bem-vindo de volta', subtitle: 'Entre para aceder ao seu livro financeiro.' } },
+      signUp: { start: { title: 'Crie a sua conta', subtitle: 'Comece um livro financeiro privado para a sua conta.' } },
+    }}
+    routerPush={to => setLocation(stripBase(to))}
+    routerReplace={to => setLocation(stripBase(to), { replace: true })}
+  >
+    <QueryClientProvider client={queryClient}>
+      <ClerkQueryClientCacheInvalidator/>
+      <TooltipProvider>
+        <AppRoutes/>
+        <Toaster/>
+      </TooltipProvider>
+    </QueryClientProvider>
+  </ClerkProvider>;
+}
+
+function App() {
+  return <WouterRouter base={basePath}><ClerkProviderWithRoutes/></WouterRouter>;
 }
 
 export default App;

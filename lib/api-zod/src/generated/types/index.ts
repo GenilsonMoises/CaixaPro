@@ -29,3 +29,5 @@ export * from './responsible';
 export * from './responsibleInput';
 export * from './responsibleUpdate';
 export * from './settingsInput';
+export * from './userProfile';
+export * from './userProfileInput';

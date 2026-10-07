@@ -17,6 +17,31 @@ export const HealthCheckResponse = zod.object({
 
 
 /**
+ * @summary Get the authenticated employee profile
+ */
+export const GetProfileResponse = zod.object({
+  "displayName": zod.string().nullable()
+})
+
+
+/**
+ * @summary Set the authenticated employee display name
+ */
+export const updateProfileBodyDisplayNameMin = 2;
+export const updateProfileBodyDisplayNameMax = 120;
+
+
+
+export const UpdateProfileBody = zod.object({
+  "displayName": zod.string().min(updateProfileBodyDisplayNameMin).max(updateProfileBodyDisplayNameMax)
+})
+
+export const UpdateProfileResponse = zod.object({
+  "displayName": zod.string().nullable()
+})
+
+
+/**
  * @summary List categories
  */
 export const ListCategoriesResponseItem = zod.object({
@@ -178,6 +203,8 @@ export const ListMovementsQueryParams = zod.object({
 
 export const ListMovementsResponseItem = zod.object({
   "id": zod.number().int(),
+  "movementCode": zod.string(),
+  "bankName": zod.string().nullable(),
   "date": zod.coerce.date(),
   "type": zod.enum(['income', 'expense', 'transfer']),
   "account": zod.enum(['bank', 'cash']),
@@ -195,12 +222,15 @@ export const ListMovementsResponse = zod.array(ListMovementsResponseItem)
 /**
  * @summary Create an income, expense, or transfer
  */
+export const createMovementBodyBankNameMax = 120;
+
 
 export const createMovementBodyDescriptionMax = 500;
 
 
 
 export const CreateMovementBody = zod.object({
+  "bankName": zod.string().max(createMovementBodyBankNameMax).nullish(),
   "date": zod.coerce.date(),
   "type": zod.enum(['income', 'expense', 'transfer']),
   "account": zod.enum(['bank', 'cash']),
@@ -217,6 +247,8 @@ export const CreateMovementBody = zod.object({
 
 export const CreateMovementResponse = zod.object({
   "id": zod.number().int(),
+  "movementCode": zod.string(),
+  "bankName": zod.string().nullable(),
   "date": zod.coerce.date(),
   "type": zod.enum(['income', 'expense', 'transfer']),
   "account": zod.enum(['bank', 'cash']),
@@ -240,12 +272,15 @@ export const UpdateMovementParams = zod.object({
   "id": zod.coerce.number().int().min(1)
 })
 
+export const updateMovementBodyBankNameMax = 120;
+
 
 export const updateMovementBodyDescriptionMax = 500;
 
 
 
 export const UpdateMovementBody = zod.object({
+  "bankName": zod.string().max(updateMovementBodyBankNameMax).nullish(),
   "date": zod.coerce.date().optional(),
   "type": zod.enum(['income', 'expense', 'transfer']).optional(),
   "account": zod.enum(['bank', 'cash']).optional(),
@@ -262,6 +297,8 @@ export const UpdateMovementBody = zod.object({
 
 export const UpdateMovementResponse = zod.object({
   "id": zod.number().int(),
+  "movementCode": zod.string(),
+  "bankName": zod.string().nullable(),
   "date": zod.coerce.date(),
   "type": zod.enum(['income', 'expense', 'transfer']),
   "account": zod.enum(['bank', 'cash']),
@@ -332,6 +369,8 @@ export const GetOverviewResponse = zod.object({
 })),
   "recentMovements": zod.array(zod.object({
   "id": zod.number().int(),
+  "movementCode": zod.string(),
+  "bankName": zod.string().nullable(),
   "date": zod.coerce.date(),
   "type": zod.enum(['income', 'expense', 'transfer']),
   "account": zod.enum(['bank', 'cash']),

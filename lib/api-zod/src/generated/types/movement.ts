@@ -10,6 +10,9 @@ import type { MovementType } from './movementType';
 
 export interface Movement {
   id: number;
+  movementCode: string;
+  /** @nullable */
+  bankName: string | null;
   date: Date;
   type: MovementType;
   account: Account;

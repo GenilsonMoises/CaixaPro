@@ -9,6 +9,19 @@ export interface HealthStatus {
   status: string;
 }
 
+export interface UserProfile {
+  /** @nullable */
+  displayName: string | null;
+}
+
+export interface UserProfileInput {
+  /**
+     * @minLength 2
+     * @maxLength 120
+     */
+  displayName: string;
+}
+
 export interface Error {
   error: string;
 }
@@ -85,6 +98,9 @@ export interface ResponsibleUpdate {
 
 export interface Movement {
   id: number;
+  movementCode: string;
+  /** @nullable */
+  bankName: string | null;
   date: string;
   type: MovementType;
   account: Account;
@@ -102,6 +118,11 @@ export interface Movement {
 }
 
 export interface MovementInput {
+  /**
+     * @maxLength 120
+     * @nullable
+     */
+  bankName?: string | null;
   date: string;
   type: MovementType;
   account: Account;
@@ -122,6 +143,11 @@ export interface MovementInput {
 }
 
 export interface MovementUpdate {
+  /**
+     * @maxLength 120
+     * @nullable
+     */
+  bankName?: string | null;
   date?: string;
   type?: MovementType;
   account?: Account;

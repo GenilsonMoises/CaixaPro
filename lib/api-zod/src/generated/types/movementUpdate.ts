@@ -9,6 +9,11 @@ import type { Account } from './account';
 import type { MovementType } from './movementType';
 
 export interface MovementUpdate {
+  /**
+     * @maxLength 120
+     * @nullable
+     */
+  bankName?: string | null;
   date?: Date;
   type?: MovementType;
   account?: Account;

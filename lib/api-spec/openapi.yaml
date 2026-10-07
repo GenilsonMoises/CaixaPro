@@ -7,6 +7,8 @@ info:
 servers:
   - url: /api
     description: Base API path
+security:
+  - clerkSession: []
 tags:
   - name: health
   - name: finance
@@ -16,6 +18,7 @@ paths:
       operationId: healthCheck
       tags: [health]
       summary: Check API health
+      security: []
       responses:
         "200":
           description: Healthy
@@ -23,6 +26,37 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HealthStatus"
+  /profile:
+    get:
+      operationId: getProfile
+      tags: [finance]
+      summary: Get the authenticated employee profile
+      responses:
+        "200":
+          description: Current user's profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+    put:
+      operationId: updateProfile
+      tags: [finance]
+      summary: Set the authenticated employee display name
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UserProfileInput"
+      responses:
+        "200":
+          description: Updated profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserProfile"
+        "400":
+          $ref: "#/components/responses/BadRequest"
   /categories:
     get:
       operationId: listCategories
@@ -329,6 +363,11 @@ paths:
         "400":
           $ref: "#/components/responses/BadRequest"
 components:
+  securitySchemes:
+    clerkSession:
+      type: apiKey
+      in: cookie
+      name: __session
   parameters:
     Id:
       name: id
@@ -357,6 +396,20 @@ components:
         status:
           type: string
       required: [status]
+    UserProfile:
+      type: object
+      properties:
+        displayName:
+          type: ["string", "null"]
+      required: [displayName]
+    UserProfileInput:
+      type: object
+      properties:
+        displayName:
+          type: string
+          minLength: 2
+          maxLength: 120
+      required: [displayName]
     Error:
       type: object
       properties:
@@ -439,6 +492,10 @@ components:
       properties:
         id:
           type: integer
+        movementCode:
+          type: string
+        bankName:
+          type: ["string", "null"]
         date:
           type: string
           format: date
@@ -466,6 +523,8 @@ components:
           format: date-time
       required:
         - id
+        - movementCode
+        - bankName
         - date
         - type
         - account
@@ -479,6 +538,9 @@ components:
     MovementInput:
       type: object
       properties:
+        bankName:
+          type: ["string", "null"]
+          maxLength: 120
         date:
           type: string
           format: date
@@ -507,6 +569,9 @@ components:
     MovementUpdate:
       type: object
       properties:
+        bankName:
+          type: ["string", "null"]
+          maxLength: 120
         date:
           type: string
           format: date
